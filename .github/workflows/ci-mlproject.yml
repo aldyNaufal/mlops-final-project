@@ -43,45 +43,56 @@ jobs:
 
       - name: Run training (local only)
         working-directory: ml
-        run: |
-          python - << 'PY'
-          from modelling_tuning import run_one_mode
-          # Jalankan hanya mode "local" supaya tracking ke file:./mlruns
-          run_one_mode("local")
-          PY
-
-
-      # 7. Get latest MLflow run_id (untuk build Docker)
-      - name: Get latest MLflow run_id
-        id: get_run
-        working-directory: ml
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
         run: |
           python - << 'PY'
           import os
-          from pathlib import Path
           import mlflow
+          print("MLFLOW_TRACKING_URI env =", os.getenv("MLFLOW_TRACKING_URI"))
+          mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
 
-          tracking_uri = "file:" + str((Path.cwd() / "mlruns").resolve())
-          mlflow.set_tracking_uri(tracking_uri)
+          from modelling import run_one_mode
+          run_one_mode("local")
+          PY
 
-          client = mlflow.tracking.MlflowClient()
+      # 7. Get latest run_id dari MLflow
+      - name: Get latest MLflow run_id
+        id: get_run
+        working-directory: ml
+        env:
+          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+        run: |
+          python - << 'PY'
+          import os, sys
+          import mlflow
+          from mlflow.tracking import MlflowClient
+
+          uri = os.getenv("MLFLOW_TRACKING_URI")
+          print("Using MLFLOW_TRACKING_URI =", uri)
+          mlflow.set_tracking_uri(uri)
+
+          client = MlflowClient()
+
           exp = client.get_experiment_by_name("genre-game-mlproject")
           if exp is None:
-              # fallback ke default experiment
-              exp = client.get_experiment("0")
+            exp = client.get_experiment("0")
 
-          runs = client.search_runs(
-              [exp.experiment_id],
-              order_by=["attributes.start_time DESC"],
-              max_results=1,
-          )
+          runs = client.search_runs([exp.experiment_id],
+                                    order_by=["attributes.start_time DESC"],
+                                    max_results=1)
+
+          if not runs:
+            print("ERROR: No runs found. Either training didn't log a run, or experiment name differs.")
+            sys.exit(1)
+
           run_id = runs[0].info.run_id
           print("Latest run_id:", run_id)
 
-          out = os.environ["GITHUB_OUTPUT"]
-          with open(out, "a") as f:
-              f.write(f"run_id={run_id}\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"run_id={run_id}\n")
           PY
+
 
       # 8. Install Python dependencies (opsional, untuk inference/test lokal, Skilled)
       - name: Install Python dependencies
