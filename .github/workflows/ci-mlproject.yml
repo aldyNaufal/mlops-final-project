@@ -45,6 +45,7 @@ jobs:
         working-directory: ml
         env:
           MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
+          DATA_SOURCE: csv
         run: |
           python - << 'PY'
           import os
@@ -71,7 +72,7 @@ jobs:
 
           client = mlflow.tracking.MlflowClient()
 
-          exp_name = "genre_game_tuning_local"  # <-- samakan dengan training
+          exp_name = "track-moodel-eksperimen-mlflow"
           exp = client.get_experiment_by_name(exp_name)
           if exp is None:
               raise SystemExit(f"ERROR: Experiment '{exp_name}' not found at {tracking_uri}")
@@ -117,7 +118,7 @@ jobs:
         with:
           name: mlflow_mlruns
           path: ml/mlruns
-          
+
       # 10. Generate Docker context from MLflow model (Opsi 1)
       - name: Generate MLflow Docker context
         working-directory: ml

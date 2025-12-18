@@ -38,11 +38,44 @@ import mlflow.sklearn
 # 1. Path & loader
 # ============================================================
 
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 PREP_DATA_PATH = PROJECT_ROOT / "data_preprocessing" / "videos_with_genre.csv"
 
 MODELS_DIR = PROJECT_ROOT / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+from pymongo import MongoClient
+
+def load_xy_from_mongo() -> Tuple[pd.Series, pd.Series]:
+    uri = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+    dbn = os.getenv("MONGO_DB", "game_mlop")
+    db = MongoClient(uri)[dbn]
+
+    cur = db["videos_with_genre"].find(
+        {"primary_genre": {"$ne": None}},
+        {"title": 1, "description": 1, "tags": 1, "primary_genre": 1, "_id": 0}
+    )
+
+    rows = list(cur)
+    df = pd.DataFrame(rows)
+    if df.empty:
+        raise RuntimeError("Mongo videos_with_genre kosong. Jalankan scraper dulu.")
+
+    def combine(row):
+        parts = []
+        for c in ("title", "description", "tags"):
+            v = row.get(c)
+            if isinstance(v, str) and v.strip():
+                parts.append(v)
+        return " ".join(parts)
+
+    df["text"] = df.apply(combine, axis=1)
+
+    X = df["text"]
+    y = df["primary_genre"]
+    return X, y
 
 
 def load_preprocessed_data() -> Tuple[pd.Series, pd.Series]:
@@ -78,6 +111,21 @@ def load_preprocessed_data() -> Tuple[pd.Series, pd.Series]:
     y = df["primary_genre"]
 
     return X, y
+
+def load_data() -> Tuple[pd.Series, pd.Series]:
+    """
+    DATA_SOURCE:
+      - csv   -> baca PREP_DATA_PATH (default)
+      - mongo -> baca MongoDB
+    """
+    source = os.getenv("DATA_SOURCE", "csv").lower()
+    if source == "mongo":
+        print("[INFO] Load data from MongoDB")
+        return load_xy_from_mongo()
+    else:
+        print("[INFO] Load data from CSV")
+        return load_preprocessed_data()
+
 
 
 def split_train_val_test(
@@ -369,7 +417,7 @@ def run_one_mode(mode: str):
     print(f"[MODE] Running tuning in mode: {mode}")
     print("#" * 70)
 
-    X, y = load_preprocessed_data()
+    X, y = load_data()
     X_train, X_val, X_test, y_train, y_val, y_test = split_train_val_test(X, y)
 
     # 🔥 PARAMETER GRID DIPERBANYAK
@@ -381,7 +429,7 @@ def run_one_mode(mode: str):
     # total kombinasi: 5 * 3 * 5 = 75 per mode
 
     if mode == "local":
-        setup_mlflow_local(experiment_name="genre_game_tuning_local")
+        setup_mlflow_local(experiment_name="track-moodel-eksperimen-mlflow")
         run_prefix = "local"
         model_suffix = "local"
 
