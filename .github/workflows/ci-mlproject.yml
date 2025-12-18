@@ -37,7 +37,7 @@ jobs:
       # 5. Set MLflow Tracking URI (lokal -> ./mlruns)
       - name: Set MLflow Tracking URI
         run: |
-          echo "MLFLOW_TRACKING_URI=file:$(pwd)/MLProject/mlruns" >> $GITHUB_ENV
+          echo "MLFLOW_TRACKING_URI=file:$(pwd)/ml/mlruns" >> $GITHUB_ENV
 
       # 6. Run mlflow project (ini step utama retraining)
 
@@ -45,7 +45,7 @@ jobs:
         working-directory: ml
         run: |
           python - << 'PY'
-          from modelling import run_one_mode
+          from modelling_tuning import run_one_mode
           # Jalankan hanya mode "local" supaya tracking ke file:./mlruns
           run_one_mode("local")
           PY
