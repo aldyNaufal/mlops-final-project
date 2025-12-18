@@ -5,7 +5,7 @@ on:
   push:
     paths:
       - "ml/**"
-      - ".github/workflows/ci-mlproject.yml"
+      - ".github/workflows/ci-ml.yml"
 
 jobs:
   mlflow-ci:
@@ -56,43 +56,37 @@ jobs:
           run_one_mode("local")
           PY
 
-      # 7. Get latest run_id dari MLflow
+      # 7. Get latest MLflow run_id (untuk build Docker)
       - name: Get latest MLflow run_id
         id: get_run
         working-directory: ml
-        env:
-          MLFLOW_TRACKING_URI: ${{ env.MLFLOW_TRACKING_URI }}
         run: |
           python - << 'PY'
-          import os, sys
+          import os
+          from pathlib import Path
           import mlflow
-          from mlflow.tracking import MlflowClient
 
-          uri = os.getenv("MLFLOW_TRACKING_URI")
-          print("Using MLFLOW_TRACKING_URI =", uri)
-          mlflow.set_tracking_uri(uri)
+          tracking_uri = "file:" + str((Path.cwd() / "mlruns").resolve())
+          mlflow.set_tracking_uri(tracking_uri)
 
-          client = MlflowClient()
-
-          exp = client.get_experiment_by_name("genre-game-mlproject")
+          client = mlflow.tracking.MlflowClient()
+          exp = client.get_experiment_by_name("genre-game-ml")
           if exp is None:
-            exp = client.get_experiment("0")
+              # fallback ke default experiment
+              exp = client.get_experiment("0")
 
-          runs = client.search_runs([exp.experiment_id],
-                                    order_by=["attributes.start_time DESC"],
-                                    max_results=1)
-
-          if not runs:
-            print("ERROR: No runs found. Either training didn't log a run, or experiment name differs.")
-            sys.exit(1)
-
+          runs = client.search_runs(
+              [exp.experiment_id],
+              order_by=["attributes.start_time DESC"],
+              max_results=1,
+          )
           run_id = runs[0].info.run_id
           print("Latest run_id:", run_id)
 
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"run_id={run_id}\n")
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a") as f:
+              f.write(f"run_id={run_id}\n")
           PY
-
 
       # 8. Install Python dependencies (opsional, untuk inference/test lokal, Skilled)
       - name: Install Python dependencies
@@ -113,7 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mlflow_mlruns
-          path: MLProject/mlruns
+          path: ml/mlruns
 
       # 9b. Upload MLflow tracking (mlruns) ke Google Drive dengan rclone (tanpa zip)
       - name: Upload MLflow mlruns to Google Drive with rclone
@@ -125,13 +119,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rclone
 
-          echo "Sync MLProject/mlruns -> gdrive:mlops/mlruns"
+          echo "Sync ml/mlruns -> gdrive:mlops/mlruns"
           # copy: hanya kirim file yang baru/berubah, tidak menghapus yang lama di Drive
-          rclone --config rclone.conf copy MLProject/mlruns gdrive:mlops/mlruns -v
+          rclone --config rclone.conf copy ml/mlruns gdrive:mlops/mlruns -v
 
       # 10. Generate Docker context from MLflow model (Opsi 1)
       - name: Generate MLflow Docker context
-        working-directory: MLProject
+        working-directory: ml
         env:
           RUN_ID: ${{ steps.get_run.outputs.run_id }}
         run: |
@@ -143,7 +137,7 @@ jobs:
 
       # 11. Patch Dockerfile base image (ganti dari image default MLflow)
       - name: Patch Dockerfile base image
-        working-directory: MLProject
+        working-directory: ml
         run: |
           echo "Before patch:"
           head -n 5 docker_ctx/Dockerfile || true
@@ -159,7 +153,7 @@ jobs:
 
       # 12. Build Docker Image (Advanced)
       - name: Build Docker Image
-        working-directory: MLProject
+        working-directory: ml
         env:
           IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
         run: |
