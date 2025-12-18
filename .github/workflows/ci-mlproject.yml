@@ -42,7 +42,7 @@ jobs:
       # 6. Run mlflow project (ini step utama retraining)
 
       - name: Run training (local only)
-        working-directory: MLProject
+        working-directory: ml
         run: |
           python - << 'PY'
           from modelling import run_one_mode
@@ -54,7 +54,7 @@ jobs:
       # 7. Get latest MLflow run_id (untuk build Docker)
       - name: Get latest MLflow run_id
         id: get_run
-        working-directory: MLProject
+        working-directory: ml
         run: |
           python - << 'PY'
           import os
@@ -85,7 +85,7 @@ jobs:
 
       # 8. Install Python dependencies (opsional, untuk inference/test lokal, Skilled)
       - name: Install Python dependencies
-        working-directory: MLProject
+        working-directory: ml
         run: |
           python - << 'PY'
           import yaml, subprocess
