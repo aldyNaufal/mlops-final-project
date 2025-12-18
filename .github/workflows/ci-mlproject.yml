@@ -52,7 +52,7 @@ jobs:
           print("MLFLOW_TRACKING_URI env =", os.getenv("MLFLOW_TRACKING_URI"))
           mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
 
-          from modelling import run_one_mode
+          from modelling_tuning import run_one_mode
           run_one_mode("local")
           PY
 
