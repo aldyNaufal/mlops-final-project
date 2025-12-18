@@ -117,21 +117,7 @@ jobs:
         with:
           name: mlflow_mlruns
           path: ml/mlruns
-
-      # 9b. Upload MLflow tracking (mlruns) ke Google Drive dengan rclone (tanpa zip)
-      - name: Upload MLflow mlruns to Google Drive with rclone
-        run: |
-          # Decode rclone.conf dari secret
-          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > rclone.conf
-
-          # Install rclone
-          sudo apt-get update
-          sudo apt-get install -y rclone
-
-          echo "Sync ml/mlruns -> gdrive:mlops/mlruns"
-          # copy: hanya kirim file yang baru/berubah, tidak menghapus yang lama di Drive
-          rclone --config rclone.conf copy ml/mlruns gdrive:mlops/mlruns -v
-
+          
       # 10. Generate Docker context from MLflow model (Opsi 1)
       - name: Generate MLflow Docker context
         working-directory: ml
