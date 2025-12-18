@@ -1,0 +1,12 @@
+{
+    "best_params": {
+        "max_features": 10000,
+        "ngram_range": [
+            1,
+            1
+        ],
+        "C": 0.1
+    },
+    "best_val_accuracy": 0.9545454545454546,
+    "best_val_f1_macro": 0.9440115440115441
+}

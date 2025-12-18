@@ -41,6 +41,18 @@ services:
     ports: ["8501:8501"]
     depends_on: [mongo, prometheus]
 
+  traffic:
+    build: ./scripts
+    environment:
+      - PREDICT_URL=http://api:8000/predict
+      - SLEEP_SECONDS=2
+      - ERROR_RATE=0.05
+    depends_on:
+      - api
+
+
+
+
 volumes:
   mongo_data:
   grafana_data:
