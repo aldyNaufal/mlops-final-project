@@ -4,6 +4,6 @@ conda_env: conda.yaml
 
 entry_points:
   main:
-    parameters:
-      data_path: {type: str, default: "data_preprocessing/videos_preprocessed.csv"}
+    parameters:0
+      data_path: {type: str, default: "data_preprocessing/videos_with_genre.csv"}
     command: "python modelling_tuning.py --data_path {data_path}"

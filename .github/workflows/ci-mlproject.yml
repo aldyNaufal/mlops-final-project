@@ -32,7 +32,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mlflow==2.16.0 pyyaml mlflow==2.16.0 scikit-learn==1.5.1 pandas==2.2.2 numpy==1.26.4 python-dotenv==1.0.1 joblib==1.4.2
+          pip install mlflow==2.16.0 pyyaml scikit-learn==1.5.1 pandas==2.2.2 numpy==1.26.4 python-dotenv==1.0.1 joblib==1.4.2
 
       # 5. Set MLflow Tracking URI (lokal -> ./mlruns)
       - name: Set MLflow Tracking URI
@@ -70,16 +70,24 @@ jobs:
           mlflow.set_tracking_uri(tracking_uri)
 
           client = mlflow.tracking.MlflowClient()
-          exp = client.get_experiment_by_name("genre-game-ml")
+
+          exp_name = "genre_game_tuning_local"  # <-- samakan dengan training
+          exp = client.get_experiment_by_name(exp_name)
           if exp is None:
-              # fallback ke default experiment
-              exp = client.get_experiment("0")
+              raise SystemExit(f"ERROR: Experiment '{exp_name}' not found at {tracking_uri}")
 
           runs = client.search_runs(
               [exp.experiment_id],
               order_by=["attributes.start_time DESC"],
               max_results=1,
           )
+
+          if not runs:
+              raise SystemExit(
+                  f"ERROR: No runs found in experiment '{exp_name}'. "
+                  f"Check that training step created mlruns in {Path.cwd()/ 'mlruns'}"
+              )
+
           run_id = runs[0].info.run_id
           print("Latest run_id:", run_id)
 
@@ -87,6 +95,7 @@ jobs:
           with open(out, "a") as f:
               f.write(f"run_id={run_id}\n")
           PY
+
 
       # 8. Install Python dependencies (opsional, untuk inference/test lokal, Skilled)
       - name: Install Python dependencies
