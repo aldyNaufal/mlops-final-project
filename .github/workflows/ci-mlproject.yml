@@ -1,0 +1,177 @@
+name: CI - Train with MLflow Project (Advanced)
+
+on:
+  workflow_dispatch:   # bisa dijalankan manual
+  push:
+    paths:
+      - "ml/**"
+      - ".github/workflows/ci-mlproject.yml"
+
+jobs:
+  mlflow-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Set up job
+      - name: Run actions/checkout@v4
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Check Env
+      - name: Check Env
+        run: |
+          echo "Working directory: $(pwd)"
+          ls -R
+
+      # 4. Install dependencies (untuk mlflow CLI)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mlflow==2.16.0 pyyaml mlflow==2.16.0 scikit-learn==1.5.1 pandas==2.2.2 numpy==1.26.4 python-dotenv==1.0.1 joblib==1.4.2
+
+      # 5. Set MLflow Tracking URI (lokal -> ./mlruns)
+      - name: Set MLflow Tracking URI
+        run: |
+          echo "MLFLOW_TRACKING_URI=file:$(pwd)/MLProject/mlruns" >> $GITHUB_ENV
+
+      # 6. Run mlflow project (ini step utama retraining)
+
+      - name: Run training (local only)
+        working-directory: MLProject
+        run: |
+          python - << 'PY'
+          from modelling import run_one_mode
+          # Jalankan hanya mode "local" supaya tracking ke file:./mlruns
+          run_one_mode("local")
+          PY
+
+
+      # 7. Get latest MLflow run_id (untuk build Docker)
+      - name: Get latest MLflow run_id
+        id: get_run
+        working-directory: MLProject
+        run: |
+          python - << 'PY'
+          import os
+          from pathlib import Path
+          import mlflow
+
+          tracking_uri = "file:" + str((Path.cwd() / "mlruns").resolve())
+          mlflow.set_tracking_uri(tracking_uri)
+
+          client = mlflow.tracking.MlflowClient()
+          exp = client.get_experiment_by_name("genre-game-mlproject")
+          if exp is None:
+              # fallback ke default experiment
+              exp = client.get_experiment("0")
+
+          runs = client.search_runs(
+              [exp.experiment_id],
+              order_by=["attributes.start_time DESC"],
+              max_results=1,
+          )
+          run_id = runs[0].info.run_id
+          print("Latest run_id:", run_id)
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a") as f:
+              f.write(f"run_id={run_id}\n")
+          PY
+
+      # 8. Install Python dependencies (opsional, untuk inference/test lokal, Skilled)
+      - name: Install Python dependencies
+        working-directory: MLProject
+        run: |
+          python - << 'PY'
+          import yaml, subprocess
+          env = yaml.safe_load(open("conda.yaml"))
+          pkgs = [p for p in env.get("dependencies", []) if isinstance(p, dict) and "pip" in p]
+          if pkgs:
+              pip_pkgs = pkgs[0]["pip"]
+              print("Installing:", pip_pkgs)
+              subprocess.check_call(["pip", "install", *pip_pkgs])
+          PY
+
+      # 9. Upload artefak ke repositori (GitHub artifact)
+      - name: Upload MLflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow_mlruns
+          path: MLProject/mlruns
+
+      # 9b. Upload MLflow tracking (mlruns) ke Google Drive dengan rclone (tanpa zip)
+      - name: Upload MLflow mlruns to Google Drive with rclone
+        run: |
+          # Decode rclone.conf dari secret
+          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > rclone.conf
+
+          # Install rclone
+          sudo apt-get update
+          sudo apt-get install -y rclone
+
+          echo "Sync MLProject/mlruns -> gdrive:mlops/mlruns"
+          # copy: hanya kirim file yang baru/berubah, tidak menghapus yang lama di Drive
+          rclone --config rclone.conf copy MLProject/mlruns gdrive:mlops/mlruns -v
+
+      # 10. Generate Docker context from MLflow model (Opsi 1)
+      - name: Generate MLflow Docker context
+        working-directory: MLProject
+        env:
+          RUN_ID: ${{ steps.get_run.outputs.run_id }}
+        run: |
+          echo "Generate Dockerfile from MLflow model runs:/$RUN_ID/model"
+          mlflow models generate-dockerfile \
+            -m "runs:/$RUN_ID/model" \
+            -d docker_ctx \
+            --env-manager local
+
+      # 11. Patch Dockerfile base image (ganti dari image default MLflow)
+      - name: Patch Dockerfile base image
+        working-directory: MLProject
+        run: |
+          echo "Before patch:"
+          head -n 5 docker_ctx/Dockerfile || true
+
+          # Ganti baris pertama menjadi base image Python resmi
+          sed -i '1s|.*|FROM python:3.11-slim|' docker_ctx/Dockerfile
+
+          # (opsional) hapus baris yang mengandung python3.8 kalau ada
+          sed -i '/python3.8/d' docker_ctx/Dockerfile || true
+
+          echo "After patch:"
+          head -n 10 docker_ctx/Dockerfile || true
+
+      # 12. Build Docker Image (Advanced)
+      - name: Build Docker Image
+        working-directory: MLProject
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
+        run: |
+          IMAGE_NAME="$IMAGE_BASE:latest"
+          echo "Building docker image: $IMAGE_NAME"
+          docker build -t "$IMAGE_NAME" docker_ctx
+
+      # 13. Log in to Docker Hub
+      - name: Log in to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      # 14. Tag Docker Image (tambahkan tag pakai commit SHA, optional)
+      - name: Tag Docker Image
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
+        run: |
+          docker tag "$IMAGE_BASE:latest" "$IMAGE_BASE:${{ github.sha }}"
+
+      # 15. Push Docker Image (Advanced)
+      - name: Push Docker Image
+        env:
+          IMAGE_BASE: ${{ secrets.DOCKERHUB_USERNAME }}/genre-game-model
+        run: |
+          docker push "$IMAGE_BASE:latest"
+          docker push "$IMAGE_BASE:${{ github.sha }}"

@@ -1,0 +1,47 @@
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: [mongo_data:/data/db]
+
+  scraper:
+    build: ./scraper
+    env_file: .env
+    depends_on: [mongo]
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    env_file: .env
+    ports: ["8000:8000"]
+    volumes:
+      - model_store:/app/models
+    depends_on: [mongo]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on: [api]
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3300:3000"]
+    depends_on: [prometheus]
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  streamlit:
+    build: ./streamlit
+    env_file: .env
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+    ports: ["8501:8501"]
+    depends_on: [mongo, prometheus]
+
+volumes:
+  mongo_data:
+  grafana_data:
+  model_store:
